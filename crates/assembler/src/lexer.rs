@@ -6,6 +6,8 @@ use std::ops::Range;
 pub enum Op {
     Add,
     Sub,
+    Mul,
+    Div,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,6 +40,30 @@ impl std::ops::Sub for ImmediateValue {
     }
 }
 
+impl std::ops::Mul for ImmediateValue {
+    type Output = ImmediateValue;
+    fn mul(self, other: Self) -> ImmediateValue {
+        match (self, other) {
+            (ImmediateValue::Int(a), ImmediateValue::Int(b)) => ImmediateValue::Int(a * b),
+            (ImmediateValue::Addr(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a * b),
+            (ImmediateValue::Int(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a * b),
+            (ImmediateValue::Addr(a), ImmediateValue::Int(b)) => ImmediateValue::Addr(a * b),
+        }
+    }
+}
+
+impl std::ops::Div for ImmediateValue {
+    type Output = ImmediateValue;
+    fn div(self, other: Self) -> ImmediateValue {
+        match (self, other) {
+            (ImmediateValue::Int(a), ImmediateValue::Int(b)) => ImmediateValue::Int(a / b),
+            (ImmediateValue::Addr(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a / b),
+            (ImmediateValue::Int(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a / b),
+            (ImmediateValue::Addr(a), ImmediateValue::Int(b)) => ImmediateValue::Addr(a / b),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Token {
     Directive(String, Range<usize>),
@@ -51,6 +77,8 @@ pub enum Token {
 
     LeftBracket(Range<usize>),
     RightBracket(Range<usize>),
+    LeftParen(Range<usize>),
+    RightParen(Range<usize>),
     Comma(Range<usize>),
     Colon(Range<usize>),
 
@@ -141,6 +169,11 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                     let span = token_start..token_start + 1;
                     tokens.push(Token::BinaryOp(Op::Sub, span));
                 }
+                '*' => {
+                    chars.next();
+                    let span = token_start..token_start + 1;
+                    tokens.push(Token::BinaryOp(Op::Mul, span));
+                }
                 '.' => {
                     chars.next();
                     let directive: String = chars.by_ref()
@@ -164,6 +197,16 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                         }
                         string_literal.push(chars.next().unwrap().1);
                     }
+                }
+                '(' => {
+                    chars.next();
+                    let span = token_start..token_start + 1;
+                    tokens.push(Token::LeftParen(span));
+                }
+                ')' => {
+                    chars.next();
+                    let span = token_start..token_start + 1;
+                    tokens.push(Token::RightParen(span));
                 }
                 '[' => {
                     chars.next();
@@ -191,8 +234,9 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                         chars.next();
                         break;
                     } else {
+                        chars.next();
                         let span = token_start..token_start + 1;
-                        errors.push(CompileError::UnexpectedCharacter { character: '/', span, custom_label: None });
+                        tokens.push(Token::BinaryOp(Op::Div, span));
                     }
                 }
                 _ => {
