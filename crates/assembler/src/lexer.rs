@@ -1,11 +1,14 @@
-use crate::opcode::Opcode;
+use crate::bug;
 use crate::errors::CompileError;
+use crate::opcode::Opcode;
 use std::ops::Range;
 
 #[derive(Debug, Clone)]
 pub enum Op {
     Add,
     Sub,
+    Mul,
+    Div,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,6 +41,30 @@ impl std::ops::Sub for ImmediateValue {
     }
 }
 
+impl std::ops::Mul for ImmediateValue {
+    type Output = ImmediateValue;
+    fn mul(self, other: Self) -> ImmediateValue {
+        match (self, other) {
+            (ImmediateValue::Int(a), ImmediateValue::Int(b)) => ImmediateValue::Int(a * b),
+            (ImmediateValue::Addr(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a * b),
+            (ImmediateValue::Int(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a * b),
+            (ImmediateValue::Addr(a), ImmediateValue::Int(b)) => ImmediateValue::Addr(a * b),
+        }
+    }
+}
+
+impl std::ops::Div for ImmediateValue {
+    type Output = ImmediateValue;
+    fn div(self, other: Self) -> ImmediateValue {
+        match (self, other) {
+            (ImmediateValue::Int(a), ImmediateValue::Int(b)) => ImmediateValue::Int(a / b),
+            (ImmediateValue::Addr(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a / b),
+            (ImmediateValue::Int(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a / b),
+            (ImmediateValue::Addr(a), ImmediateValue::Int(b)) => ImmediateValue::Addr(a / b),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Token {
     Directive(String, Range<usize>),
@@ -51,6 +78,8 @@ pub enum Token {
 
     LeftBracket(Range<usize>),
     RightBracket(Range<usize>),
+    LeftParen(Range<usize>),
+    RightParen(Range<usize>),
     Comma(Range<usize>),
     Colon(Range<usize>),
 
@@ -61,6 +90,8 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
     let mut tokens = Vec::new();
     let mut errors = Vec::new();
     let mut byte_offset = 0;
+
+    let mut paren_stack : Vec<Token> = Vec::new();
 
     for line in source.lines() {
         if line.is_empty() {
@@ -141,6 +172,11 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                     let span = token_start..token_start + 1;
                     tokens.push(Token::BinaryOp(Op::Sub, span));
                 }
+                '*' => {
+                    chars.next();
+                    let span = token_start..token_start + 1;
+                    tokens.push(Token::BinaryOp(Op::Mul, span));
+                }
                 '.' => {
                     chars.next();
                     let directive: String = chars.by_ref()
@@ -164,6 +200,19 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                         }
                         string_literal.push(chars.next().unwrap().1);
                     }
+                }
+                '(' => {
+                    chars.next();
+                    let span = token_start..token_start + 1;
+                    let token = Token::LeftParen(span);
+                    paren_stack.push(token.clone());
+                    tokens.push(token);
+                }
+                ')' => {
+                    chars.next();
+                    let span = token_start..token_start + 1;
+                    paren_stack.pop();
+                    tokens.push(Token::RightParen(span));
                 }
                 '[' => {
                     chars.next();
@@ -191,8 +240,9 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                         chars.next();
                         break;
                     } else {
+                        chars.next();
                         let span = token_start..token_start + 1;
-                        errors.push(CompileError::UnexpectedCharacter { character: '/', span, custom_label: None });
+                        tokens.push(Token::BinaryOp(Op::Div, span));
                     }
                 }
                 _ => {
@@ -206,6 +256,14 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
         tokens.push(Token::Newline(byte_offset..byte_offset + 1));
         byte_offset += 1;
     }
+
+    while !paren_stack.is_empty() {
+        let Token::LeftParen(span) = paren_stack.pop().unwrap() else {
+            bug!("this stack should only contain left paren tokens")
+        };
+        errors.push(CompileError::UnmatchedParen { span, custom_label: None });
+    }
+    
     if errors.is_empty() {
         Ok(tokens)
     } else {

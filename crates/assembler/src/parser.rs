@@ -419,64 +419,129 @@ impl ParseInstruction for Instruction {
                         }
                         let (value, advance_token_num) = inline_and_fold_constant(tokens, const_map, 3);
                         if let Some(value) = value {
-                            match (
-                                &tokens[1],
-                                &tokens[2],
-                                // Third operand is folded to an immediate value
-                                &tokens[advance_token_num],
-                                &tokens[advance_token_num + 1],
-                            ) {
-                                (
-                                    Token::Register(_, _),
-                                    Token::Comma(_),
+                            let (jump_val, jump_val_advance_token_num) = inline_and_fold_constant(tokens, const_map, advance_token_num + 1);
+                            if let Some(jump_val) = jump_val {
+                                match (
+                                    &tokens[1],
+                                    &tokens[2],
                                     // Third operand is folded to an immediate value
-                                    Token::Comma(_),
-                                    Token::Identifier(_, _)
-                                ) => {
-                                    opcode = FromPrimitive::from_u8((opcode as u8) + 1).expect("Invalid opcode conversion"); 
-                                    operands.push(tokens[1].clone());
-                                    operands.push(Token::ImmediateValue(value, span.clone()));
-                                    operands.push(tokens[advance_token_num + 1].clone());
+                                    &tokens[advance_token_num],
+                                    // Fifth operand is folded to an immediate value
+                                ) {
+                                    (
+                                        Token::Register(_, _),
+                                        Token::Comma(_),
+                                        // Third operand is folded to an immediate value
+                                        Token::Comma(_),
+                                        // Fifth operand is folded to an immediate value
+                                    ) => {
+                                        opcode = FromPrimitive::from_u8((opcode as u8) + 1).expect("Invalid opcode conversion"); 
+                                        operands.push(tokens[1].clone());
+                                        operands.push(Token::ImmediateValue(value, span.clone()));
+                                        operands.push(Token::ImmediateValue(jump_val, span.clone()));
+                                    }
+                                    _ => {
+                                        return Err(
+                                            CompileError::InvalidInstruction {
+                                                instruction: opcode.to_string()
+                                                , span: span.clone()
+                                                , custom_label: Some(EXPECTS_REG_COM_IMM_COM_IMM_OR_IDEN.to_string()) });
+                                    }
                                 }
-                                _ => {
-                                    return Err(
-                                        CompileError::InvalidInstruction {  //
-                                            instruction: opcode.to_string() //
-                                            , span: span.clone()            //
-                                            , custom_label: Some(EXPECTS_REG_COM_IMM_COM_IMM_OR_IDEN.to_string()) });
+                                next_token_num = jump_val_advance_token_num;
+                            } else {
+                                match (
+                                    &tokens[1],
+                                    &tokens[2],
+                                    // Third operand is folded to an immediate value
+                                    &tokens[advance_token_num],
+                                    &tokens[advance_token_num + 1],
+                                ) {
+                                    (
+                                        Token::Register(_, _),
+                                        Token::Comma(_),
+                                        // Third operand is folded to an immediate value
+                                        Token::Comma(_),
+                                        Token::Identifier(_, _)
+                                    ) => {
+                                        opcode = FromPrimitive::from_u8((opcode as u8) + 1).expect("Invalid opcode conversion"); 
+                                        operands.push(tokens[1].clone());
+                                        operands.push(Token::ImmediateValue(value, span.clone()));
+                                        operands.push(tokens[advance_token_num + 1].clone());
+                                    }
+                                    _ => {
+                                        return Err(
+                                            CompileError::InvalidInstruction {  //
+                                                instruction: opcode.to_string() //
+                                                , span: span.clone()            //
+                                                , custom_label: Some(EXPECTS_REG_COM_IMM_COM_IMM_OR_IDEN.to_string()) });
+                                    }
                                 }
+                                next_token_num = advance_token_num + 2;
                             }
-                            next_token_num = advance_token_num + 2;
                         } else {
-                            match (
-                                &tokens[1],
-                                &tokens[2],
-                                &tokens[3],
-                                &tokens[4],
-                                &tokens[5],
-                            ) {
-                                (
-                                    Token::Register(_, _),
-                                    Token::Comma(_),
-                                    Token::Register(_, _),
-                                    Token::Comma(_),
-                                    Token::Identifier(_, _)
-                                ) => {
-                                    // turn "invalid opcode" to a bug
-                                    opcode = FromPrimitive::from_u8((opcode as u8) + 2).expect("Invalid opcode conversion"); 
-                                    operands.push(tokens[1].clone());
-                                    operands.push(tokens[3].clone());
-                                    operands.push(tokens[5].clone());
+                            let (jump_val, jump_val_advance_token_num) = inline_and_fold_constant(tokens, const_map, advance_token_num + 1);
+                            if let Some(jump_val) = jump_val {
+                                match (
+                                    &tokens[1],
+                                    &tokens[2],
+                                    &tokens[3],
+                                    &tokens[4],
+                                    // Fifth operand is folded to an immediate value
+                                ) {
+                                    (
+                                        Token::Register(_, _),
+                                        Token::Comma(_),
+                                        Token::Register(_, _),
+                                        Token::Comma(_),
+                                        // Fifth operand is folded to an immediate value
+                                    ) => {
+                                        // turn "invalid opcode" to a bug
+                                        opcode = FromPrimitive::from_u8((opcode as u8) + 2).expect("Invalid opcode conversion"); 
+                                        operands.push(tokens[1].clone());
+                                        operands.push(tokens[3].clone());
+                                        operands.push(Token::ImmediateValue(jump_val, span.clone()));
+                                    }
+                                    _ => {
+                                        return Err(
+                                            CompileError::InvalidInstruction {  //
+                                                instruction: opcode.to_string() //
+                                                , span: span.clone()            //
+                                                , custom_label: Some(EXPECTS_REG_COM_IMM_COM_IMM_OR_IDEN.to_string()) });
+                                    }
                                 }
-                                _ => {
-                                    return Err(
-                                        CompileError::InvalidInstruction {  //
-                                            instruction: opcode.to_string() //
-                                            , span: span.clone()            //
-                                            , custom_label: Some(EXPECTS_REG_COM_IMM_COM_IMM_OR_IDEN.to_string()) });
+                                next_token_num = jump_val_advance_token_num;
+                            } else {
+                                match (
+                                    &tokens[1],
+                                    &tokens[2],
+                                    &tokens[3],
+                                    &tokens[4],
+                                    &tokens[5],
+                                ) {
+                                    (
+                                        Token::Register(_, _),
+                                        Token::Comma(_),
+                                        Token::Register(_, _),
+                                        Token::Comma(_),
+                                        Token::Identifier(_, _)
+                                    ) => {
+                                        // turn "invalid opcode" to a bug
+                                        opcode = FromPrimitive::from_u8((opcode as u8) + 2).expect("Invalid opcode conversion"); 
+                                        operands.push(tokens[1].clone());
+                                        operands.push(tokens[3].clone());
+                                        operands.push(tokens[5].clone());
+                                    }
+                                    _ => {
+                                        return Err(
+                                            CompileError::InvalidInstruction {  //
+                                                instruction: opcode.to_string() //
+                                                , span: span.clone()            //
+                                                , custom_label: Some(EXPECTS_REG_COM_IMM_COM_IMM_OR_IDEN.to_string()) });
+                                    }
                                 }
+                                next_token_num = 6;
                             }
-                            next_token_num = 6;
                         }
                     }
                     Opcode::Ja => {
@@ -553,51 +618,140 @@ impl ParseInstruction for Instruction {
     }
 }
 
-fn inline_and_fold_constant_helper(tokens: &[Token]                             //
-                                , const_map: &HashMap<String, ImmediateValue>   //
-                                , value: ImmediateValue                         //
-                                , idx: usize) -> (Option<ImmediateValue>, usize) {
-    if tokens.len() < idx + 3 {
-        return (Some(value), idx + 1);
+fn fold_top(stack: &mut Vec<Token>) {
+    if stack.len() < 3 {
+        return;
     }
 
-    match (
-        &tokens[idx + 1],
-        &tokens[idx + 2],
+    if let (
+        Token::ImmediateValue(val1, _),
+        Token::BinaryOp(op, _),
+        Token::ImmediateValue(val2, span),
+    ) = (
+        stack[stack.len() - 3].clone(),
+        stack[stack.len() - 2].clone(),
+        stack[stack.len() - 1].clone(),
     ) {
-        (
-            Token::BinaryOp(op, _),
-            Token::ImmediateValue(value2, _)
-        ) => {
-            let result = match op {
-                Op::Add => {
-                    value + value2.clone()
-                }
-                Op::Sub => {
-                    value - value2.clone()
-                }
-            };
-            inline_and_fold_constant_helper(tokens, const_map, result, idx + 2)
-        }
-        _ => (Some(value), idx + 1),
+        let result = match op {
+                Op::Add => val1.clone() + val2.clone(),
+                Op::Sub => val1.clone() - val2.clone(),
+                Op::Mul => val1.clone() * val2.clone(),
+                Op::Div => val1.clone() / val2.clone(),
+        };
+        stack.pop();
+        stack.pop();
+        stack.pop();
+        stack.push(Token::ImmediateValue(result, span));
     }
 }
 
-fn inline_and_fold_constant(tokens: &[Token]                            //
-                        , const_map: &HashMap<String, ImmediateValue>   //
-                        , idx: usize) -> (Option<ImmediateValue>, usize) {
-    let value = match &tokens[idx] {
-        Token::ImmediateValue(value, _) => value.clone(),
-        Token::Identifier(name, _) => {
-            if let Some(val) = const_map.get(name) {
-                val.clone()
-            } else {
-                return (None, idx + 1);
+fn inline_and_fold_constant(
+    tokens: &[Token],
+    const_map: &std::collections::HashMap<String, ImmediateValue>,
+    start_idx: usize,
+) -> (Option<ImmediateValue>, usize) {
+    let mut stack: Vec<Token> = Vec::new();
+    let mut expect_number = true;
+    let mut idx = start_idx;
+
+    while idx < tokens.len() {
+        match &tokens[idx] {
+            Token::ImmediateValue(val, span) if expect_number => {
+                stack.push(Token::ImmediateValue(val.clone(), span.clone()));
+                expect_number = false;
+
+                // Immediately fold * / if top
+                if stack.len() > 2 {
+                    if let Token::BinaryOp(op, _) = &stack[stack.len() - 2] {
+                        if matches!(op, Op::Mul | Op::Div) {
+                            fold_top(&mut stack);
+                        }
+                    }
+                }
             }
-        },
-        _ => return (None, idx + 1),
-    };
-    inline_and_fold_constant_helper(tokens, const_map, value, idx)
+
+            Token::Identifier(name, span) if expect_number => {
+                if let Some(val) = const_map.get(name) {
+                    stack.push(Token::ImmediateValue(val.clone(), span.clone()));
+                    expect_number = false;
+
+                    if stack.len() > 2 {
+                        if let Token::BinaryOp(op, _) = &stack[stack.len() - 2] {
+                            if matches!(op, Op::Mul | Op::Div) {
+                                fold_top(&mut stack);
+                            }
+                        }
+                    }
+                } else {
+                    return (None, idx);
+                }
+            }
+
+            Token::BinaryOp(op, span) => {
+                match op {
+                    Op::Sub if expect_number => {
+                        // unary minus → 0 - expr
+                        stack.push(Token::ImmediateValue(ImmediateValue::Int(0), span.clone()));
+                        stack.push(Token::BinaryOp(Op::Sub, span.clone()));
+                    }
+                    _ => {
+                        stack.push(Token::BinaryOp(op.clone(), span.clone()));
+                    }
+                }
+                expect_number = true;
+            }
+
+            Token::LeftParen(span) => {
+                // Parse inside parentheses
+                let (inner_val, new_idx) = inline_and_fold_constant(tokens, const_map, idx + 1);
+                idx = new_idx;
+                if let Some(v) = inner_val {
+                    stack.push(Token::ImmediateValue(v, span.clone()));
+                    expect_number = false;
+
+                    if stack.len() > 2 {
+                        if let Token::BinaryOp(op, _) = &stack[stack.len() - 2] {
+                            if matches!(op, Op::Mul | Op::Div) {
+                                fold_top(&mut stack);
+                            }
+                        }
+                    }
+                } else {
+                    return (None, idx);
+                }
+                continue; // skip normal idx++
+            }
+
+            Token::RightParen(_) => {
+                // fold remaining + and -
+                while stack.len() > 2 {
+                    fold_top(&mut stack);
+                }
+                if let Token::ImmediateValue(v, _) = &stack[0] {
+                    return (Some(v.clone()), idx + 1);
+                } else {
+                    return (None, idx + 1);
+                }
+            }
+
+            _ => {
+                // Unexpected token, stop
+                break;
+            }
+        }
+        idx += 1;
+    }
+
+    // Final fold at the end of expression
+    while stack.len() > 2 {
+        fold_top(&mut stack);
+    }
+
+    if let Some(Token::ImmediateValue(v, _)) = stack.pop() {
+        (Some(v), idx)
+    } else {
+        (None, idx)
+    }
 }
 
 impl Parser {

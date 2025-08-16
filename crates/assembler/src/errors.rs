@@ -61,7 +61,11 @@ define_compile_errors! {
         label = "Unexpected token",
         fields = { token: String, span: Range<usize> }
     },
-
+    UnmatchedParen {
+        error = "Unmatched parenthesis",
+        label = "Unmatched parenthesis",
+        fields = { span: Range<usize> }
+    },
     // Semantic errors
     UndefinedLabel {
         error = "Undefined label '{label}'",
