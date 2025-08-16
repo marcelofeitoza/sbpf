@@ -760,6 +760,8 @@ impl Parser {
                                 // Replace label with immediate value
                                 let last_idx = operands.len() - 1;
                                 operands[last_idx] = Token::ImmediateValue(ImmediateValue::Int(rel_offset), span.clone());
+                            } else {
+                                errors.push(CompileError::UndefinedLabel { label: label.clone(), span: span.clone(), custom_label: None });
                             }
                         }
                     }
