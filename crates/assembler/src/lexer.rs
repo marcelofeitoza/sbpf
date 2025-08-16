@@ -1,5 +1,6 @@
-use crate::opcode::Opcode;
+use crate::bug;
 use crate::errors::CompileError;
+use crate::opcode::Opcode;
 use std::ops::Range;
 
 #[derive(Debug, Clone)]
@@ -89,6 +90,8 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
     let mut tokens = Vec::new();
     let mut errors = Vec::new();
     let mut byte_offset = 0;
+
+    let mut paren_stack : Vec<Token> = Vec::new();
 
     for line in source.lines() {
         if line.is_empty() {
@@ -201,11 +204,14 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                 '(' => {
                     chars.next();
                     let span = token_start..token_start + 1;
-                    tokens.push(Token::LeftParen(span));
+                    let token = Token::LeftParen(span);
+                    paren_stack.push(token.clone());
+                    tokens.push(token);
                 }
                 ')' => {
                     chars.next();
                     let span = token_start..token_start + 1;
+                    paren_stack.pop();
                     tokens.push(Token::RightParen(span));
                 }
                 '[' => {
@@ -250,6 +256,14 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
         tokens.push(Token::Newline(byte_offset..byte_offset + 1));
         byte_offset += 1;
     }
+
+    while !paren_stack.is_empty() {
+        let Token::LeftParen(span) = paren_stack.pop().unwrap() else {
+            bug!("this stack should only contain left paren tokens")
+        };
+        errors.push(CompileError::UnmatchedParen { span, custom_label: None });
+    }
+    
     if errors.is_empty() {
         Ok(tokens)
     } else {
