@@ -80,27 +80,33 @@ impl Parse for EquDecl {
         if tokens.len() < 3 {
             return Err(CompileError::InvalidEquDecl { span: span.clone(), custom_label: Some(EXPECTS_MORE_OPERAND.to_string()) });
         }
-        match (
-            &tokens[1],
-            &tokens[2],
-            &tokens[3],
-        ) {
-            (
-                Token::Identifier(name, span),
-                Token::Comma(_),
-                Token::ImmediateValue(_value, _)
-            ) => {
-                Ok((
-                    EquDecl {
-                        name: name.clone(),
-                        value: tokens[3].clone(),
-                        span: span.clone()
-                    },
-                    &tokens[4..]
-                ))
+        let (value, advance_token_num) = inline_and_fold_constant_with_map(tokens, None, 3);
+        if let Some(value) = value {
+            match (
+                &tokens[1],
+                &tokens[2],
+                // third operand is folded to an immediate value
+            ) {
+                (
+                    Token::Identifier(name, span),
+                    Token::Comma(_),
+                    // third operand is folded to an immediate value
+                ) => {
+                    Ok((
+                        EquDecl {
+                            name: name.clone(),
+                            value: Token::ImmediateValue(value, span.clone()),
+                            span: span.clone()
+                        },
+                        &tokens[advance_token_num..]
+                    ))
+                }
+                _ => Err(CompileError::InvalidEquDecl { span: span.clone(), custom_label: Some(EXPECTS_IDEN_COM_IMM.to_string()) }),
             }
-            _ => Err(CompileError::InvalidEquDecl { span: span.clone(), custom_label: Some(EXPECTS_IDEN_COM_IMM.to_string()) }),
+        } else {
+            Err(CompileError::InvalidEquDecl { span: span.clone(), custom_label: Some(EXPECTS_IDEN_COM_IMM.to_string()) })
         }
+
     }
 }
 
@@ -648,6 +654,14 @@ fn fold_top(stack: &mut Vec<Token>) {
 fn inline_and_fold_constant(
     tokens: &[Token],
     const_map: &std::collections::HashMap<String, ImmediateValue>,
+    start_idx: usize
+) -> (Option<ImmediateValue>, usize) {
+    inline_and_fold_constant_with_map(tokens, Some(const_map), start_idx)
+}
+
+fn inline_and_fold_constant_with_map(
+    tokens: &[Token],
+    const_map: Option<&std::collections::HashMap<String, ImmediateValue>>,
     start_idx: usize,
 ) -> (Option<ImmediateValue>, usize) {
     let mut stack: Vec<Token> = Vec::new();
@@ -671,7 +685,8 @@ fn inline_and_fold_constant(
             }
 
             Token::Identifier(name, span) if expect_number => {
-                if let Some(val) = const_map.get(name) {
+                if let Some(const_map) = const_map {
+                    if let Some(val) = const_map.get(name) {
                     stack.push(Token::ImmediateValue(val.clone(), span.clone()));
                     expect_number = false;
 
@@ -682,7 +697,11 @@ fn inline_and_fold_constant(
                             }
                         }
                     }
+                    } else {
+                        return (None, idx);
+                    }
                 } else {
+                    // error out would be better here
                     return (None, idx);
                 }
             }
@@ -703,7 +722,7 @@ fn inline_and_fold_constant(
 
             Token::LeftParen(span) => {
                 // Parse inside parentheses
-                let (inner_val, new_idx) = inline_and_fold_constant(tokens, const_map, idx + 1);
+                let (inner_val, new_idx) = inline_and_fold_constant_with_map(tokens, const_map, idx + 1);
                 idx = new_idx;
                 if let Some(v) = inner_val {
                     stack.push(Token::ImmediateValue(v, span.clone()));
