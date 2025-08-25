@@ -347,7 +347,7 @@ impl ParseInstruction for Instruction {
                     | Opcode::Lsh32 | Opcode::Rsh32 | Opcode::Mod32 
                     | Opcode::Xor32 | Opcode::Mov32 | Opcode::Arsh32 
                     | Opcode::Lmul32 | Opcode::Udiv32 | Opcode::Urem32 
-                    | Opcode::Sdiv32 | Opcode::Srem32 | Opcode::Neg32
+                    | Opcode::Sdiv32 | Opcode::Srem32
                     | Opcode::Add64 | Opcode::Sub64 | Opcode::Mul64 
                     | Opcode::Div64 | Opcode::Or64 | Opcode::And64 
                     | Opcode::Lsh64 | Opcode::Rsh64 | Opcode::Mod64 
@@ -549,6 +549,28 @@ impl ParseInstruction for Instruction {
                                 next_token_num = 6;
                             }
                         }
+                    }
+                    Opcode::Neg32 | Opcode::Neg64 => {
+                        if tokens.len() < 2 {
+                            return Err(
+                                CompileError::InvalidInstruction {  //
+                                    instruction: opcode.to_string() //
+                                    , span: span.clone()            //
+                                    , custom_label: Some(EXPECTS_MORE_OPERAND.to_string()) });
+                        }
+                        match &tokens[1] {
+                            Token::Register(_, _) => {
+                                operands.push(tokens[1].clone());
+                            }
+                            _ => {
+                                return Err(
+                                    CompileError::InvalidInstruction {  //
+                                        instruction: opcode.to_string() //
+                                        , span: span.clone()            //
+                                        , custom_label: Some(EXPECTS_REG.to_string()) });
+                            }
+                        }
+                        next_token_num = 2;
                     }
                     Opcode::Ja => {
                         if tokens.len() < 2 {
@@ -886,14 +908,6 @@ impl Parser {
                 Token::Opcode(_, _) => {
                     match Instruction::parse_instruction(tokens, &self.m_const_map) {
                         Ok((inst, rest)) => {
-                            if inst.needs_relocation() {
-                                self.m_prog_is_static = false;
-                                let (reloc_type, label) = inst.get_relocation_info();
-                                self.m_rel_dyns.add_rel_dyn(self.m_accum_offset, reloc_type, label.clone());
-                                if reloc_type == RelocationType::RSbfSyscall {
-                                    self.m_dynamic_symbols.add_call_target(label.clone(), self.m_accum_offset);
-                                }
-                            }
                             let offset = self.m_accum_offset;
                             self.m_accum_offset += inst.get_size();
                             nodes.push(ASTNode::Instruction { instruction: inst, offset });
@@ -918,36 +932,42 @@ impl Parser {
         // Second pass to resolve labels
         for node in &mut nodes {
             match node {
-                ASTNode::Instruction { instruction: Instruction { opcode, operands, .. }, offset, .. } => {
-                    // For jump instructions, replace label operands with relative offsets
-                    if *opcode == Opcode::Ja || *opcode == Opcode::JeqImm || *opcode == Opcode::JgtImm || *opcode == Opcode::JgeImm 
-                    || *opcode == Opcode::JltImm || *opcode == Opcode::JleImm || *opcode == Opcode::JsetImm || *opcode == Opcode::JneImm     
-                    || *opcode == Opcode::JsgtImm || *opcode == Opcode::JsgeImm || *opcode == Opcode::JsltImm || *opcode == Opcode::JsleImm
-                    || *opcode == Opcode::JeqReg || *opcode == Opcode::JgtReg || *opcode == Opcode::JgeReg || *opcode == Opcode::JltReg 
-                    || *opcode == Opcode::JleReg || *opcode == Opcode::JsetReg || *opcode == Opcode::JneReg || *opcode == Opcode::JsgtReg 
-                    || *opcode == Opcode::JsgeReg || *opcode == Opcode::JsltReg || *opcode == Opcode::JsleReg {
-                        if let Some(Token::Identifier(label, span)) = operands.last() {
-                            let label = label.clone(); // Clone early to avoid borrow conflict
+                ASTNode::Instruction { instruction: inst, offset, .. } => {
+                    // For jump/call instructions, replace label with relative offsets
+                    if inst.is_jump() || inst.opcode == Opcode::Call {
+                        if let Some(Token::Identifier(label, span)) = inst.operands.last() {
+                            let label = label.clone();
                             if let Some(target_offset) = self.m_label_offsets.get(&label) {
                                 let rel_offset = (*target_offset as i64 - *offset as i64) / 8 - 1;
-                                // Replace label with immediate value
-                                let last_idx = operands.len() - 1;
-                                operands[last_idx] = Token::ImmediateValue(ImmediateValue::Int(rel_offset), span.clone());
-                            } else {
+                                let last_idx = inst.operands.len() - 1;
+                                inst.operands[last_idx] = Token::ImmediateValue(ImmediateValue::Int(rel_offset), span.clone());
+                            } else if inst.is_jump() {
+                                // only error out unresolved jump labels, since call 
+                                // labels could exist externally
                                 errors.push(CompileError::UndefinedLabel { label: label.clone(), span: span.clone(), custom_label: None });
                             }
                         }
                     }
-                    if *opcode == Opcode::Lddw {
-                        if let Some(Token::Identifier(name, span)) = operands.last() {
+                    // This has to be done before resolving lddw labels since lddw 
+                    // operand needs to be absolute offset values
+                    if inst.needs_relocation() {
+                        self.m_prog_is_static = false;
+                        let (reloc_type, label) = inst.get_relocation_info();
+                        self.m_rel_dyns.add_rel_dyn(*offset, reloc_type, label.clone());
+                        if reloc_type == RelocationType::RSbfSyscall {
+                            self.m_dynamic_symbols.add_call_target(label.clone(), *offset);
+                        }
+                    }
+                    if inst.opcode == Opcode::Lddw {
+                        if let Some(Token::Identifier(name, span)) = inst.operands.last() {
                             let label = name.clone();
                             if let Some(target_offset) = self.m_label_offsets.get(&label) {
                                 let ph_count = if self.m_prog_is_static { 1 } else { 3 };
                                 let ph_offset = 64 + (ph_count as u64 * 56) as i64;
                                 let abs_offset = *target_offset as i64 + ph_offset;
                                 // Replace label with immediate value
-                                let last_idx = operands.len() - 1;
-                                operands[last_idx] = Token::ImmediateValue(ImmediateValue::Addr(abs_offset), span.clone());
+                                let last_idx = inst.operands.len() - 1;
+                                inst.operands[last_idx] = Token::ImmediateValue(ImmediateValue::Addr(abs_offset), span.clone());
                             }  else {
                                 errors.push(CompileError::UndefinedLabel { label: name.clone(), span: span.clone(), custom_label: None });
                             }

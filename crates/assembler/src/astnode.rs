@@ -130,13 +130,25 @@ impl Instruction {
     }
     pub fn needs_relocation(&self) -> bool {
         match self.opcode {
-            Opcode::Call => true,
-            Opcode::Lddw => {
-                match &self.operands[1] {
-                    Token::Identifier(_, _) => true,
+            Opcode::Call | Opcode::Lddw => {
+                match &self.operands.last() {
+                    Some(Token::Identifier(_, _)) => true,
                     _ => false,
                 }
             },
+            _ => false,
+        }
+    }
+    pub fn is_jump(&self) -> bool {
+        match self.opcode {
+            Opcode::Ja | Opcode::JeqImm | Opcode::JgtImm | Opcode::JgeImm   //
+            | Opcode::JltImm | Opcode::JleImm | Opcode::JsetImm             // 
+            | Opcode::JneImm | Opcode::JsgtImm | Opcode::JsgeImm            // 
+            | Opcode::JsltImm | Opcode::JsleImm | Opcode::JeqReg            // 
+            | Opcode::JgtReg | Opcode::JgeReg | Opcode::JltReg              // 
+            | Opcode::JleReg | Opcode::JsetReg | Opcode::JneReg             // 
+            | Opcode::JsgtReg | Opcode::JsgeReg | Opcode::JsltReg           // 
+            | Opcode::JsleReg => true,
             _ => false,
         }
     }
@@ -178,8 +190,17 @@ impl ASTNode {
                 bytes.push(opcode.to_bytecode());  // 1 byte opcode
                 
                 if *opcode == Opcode::Call {
-                    // currently hardcoded to call sol_log_
-                    bytes.extend_from_slice(&[0x10, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF]);
+                    bytes.extend_from_slice(&[0x10, 0x00, 0x00]);
+                    if let Some(Token::ImmediateValue(imm, _)) = operands.last() {
+                        let imm32 = match imm {
+                            ImmediateValue::Int(val) => *val as i32,
+                            ImmediateValue::Addr(val) => *val as i32,
+                        };
+                        bytes.extend_from_slice(&imm32.to_le_bytes());
+                    } else {
+                        // external calls
+                        bytes.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0xFF]);
+                    } 
                 } else if *opcode == Opcode::Lddw {
                     match &operands[..] {
                         [Token::Register(reg, _), Token::ImmediateValue(imm, _)] => {
@@ -221,6 +242,11 @@ impl ASTNode {
                                 };
                                 bytes.extend_from_slice(&imm32.to_le_bytes());
                             }
+                        },
+
+                        [Token::Register(reg, _)] => {
+                            bytes.push(*reg);
+                            bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
                         },
 
                         [Token::Register(reg, _), Token::ImmediateValue(imm, _)] => {
