@@ -9,6 +9,7 @@ pub const EXPECTS_LABEL_DIR_STR: &str = "expects <label>, <directive>, <string l
 pub const EXPECTS_IDEN: &str = "expects <identifier>";
 pub const EXPECTS_IDEN_COM_IMM: &str = "expects <identifier>, <immediate value>";
 pub const EXPECTS_MORE_OPERAND: &str = "expects more operand";
+pub const EXPECTS_REG: &str = "expects <register>";
 pub const EXPECTS_REG_COM_IMM: &str = "expects <register>, <immediate value>";
 pub const EXPECTS_REG_COM_REG: &str = "expects <register>, <register>";
 pub const EXPECTS_REG_COM_IMM_OR_IDEN: &str = "expects <register>, <immediate value>/<identifier>";
