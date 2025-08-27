@@ -1,6 +1,6 @@
 [package]
 name = "sbpf"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -11,7 +11,24 @@ crossterm = "0.28.1"
 ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
 rand = "0.8.5"
 serde_json = "1.0.122"
-thiserror = "1.0.63"
+thiserror = "2.0.12"
 serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.8"
+serde_yaml = "0.9.34-deprecated"
 dirs = "4.0" # For easily getting the home directory
+
+sbpf-assembler = { workspace = true }
+
+[workspace]
+members = ["crates/assembler"]
+
+[workspace.package]
+version = "0.1.1"
+
+[workspace.dependencies]
+num-derive    = "0.4"
+num-traits    = "0.2"
+thiserror = "2.0.12"
+anyhow = "1.0.86"
+codespan-reporting = "0.12.0"
+
+sbpf-assembler = { path = "crates/assembler" }

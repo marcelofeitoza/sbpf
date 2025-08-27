@@ -52,6 +52,7 @@ fn main() -> Result<(), Error> {
         Commands::Build => build(),
         Commands::Deploy(args) => deploy(args.name.clone(), args.url.clone()),
         Commands::Test => test(),
+        // use arg to specify if use light build
         Commands::E2E(args) => {
             build()?;
             deploy(args.name.clone(), args.url.clone())?;

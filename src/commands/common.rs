@@ -8,12 +8,12 @@ pub struct SolanaConfig {
 
 pub const PROGRAM: &str = r#".globl entrypoint
 entrypoint:
-    lddw r1, message
-    lddw r2, 14
-    call sol_log_
-    exit
+  lddw r1, message
+  lddw r2, 14
+  call sol_log_
+  exit
 .rodata
-    message: .ascii "Hello, Solana!"
+  message: .ascii "Hello, Solana!"
 "#;
 
 pub const DEFAULT_LINKER: &str = r#"PHDRS
@@ -44,7 +44,7 @@ ENTRY (entrypoint)"#;
 
 pub const README: &str = r#"# default_project_name
 
-Created with [sbpf](https://github.com/deanmlittle/sbpf)"#;
+Created with [sbpf](https://github.com/blueshift-gg/sbpf)"#;
 
 pub const GITIGNORE: &str = r#"build/**/*
 deploy/**/*
@@ -55,7 +55,8 @@ node_modules
 keypair.json
 package-lock.json
 test-ledger
-yarn.lock"#;
+yarn.lock
+target"#;
 
 pub const PACKAGE_JSON: &str = r#"{
   "name": "default_project_name",
@@ -154,8 +155,8 @@ edition = "2021"
 [dependencies]
 
 [dev-dependencies]
-mollusk-svm = "0.0.11"
-solana-sdk = "2.1.0"
+mollusk-svm = "0.4.1"
+solana-sdk = "2.2.1"
 
 [features]
 test-sbf = []"#;
@@ -163,7 +164,8 @@ test-sbf = []"#;
 pub const RUST_TESTS: &str = r#"#[cfg(test)]
 mod tests {
     use mollusk_svm::{result::Check, Mollusk};
-    use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+    use solana_sdk::pubkey::Pubkey;
+    use solana_sdk::instruction::Instruction;
 
     #[test]
     fn test_hello_world() {
