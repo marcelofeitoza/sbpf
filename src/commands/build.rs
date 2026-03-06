@@ -9,7 +9,12 @@ use {
     ed25519_dalek::SigningKey,
     rand::rngs::OsRng,
     sbpf_assembler::{Assembler, AssemblerOption, DebugMode, SbpfArch, errors::CompileError},
-    std::{fs, fs::create_dir_all, path::Path, time::Instant},
+    std::{
+        collections::HashMap,
+        fs::{self, create_dir_all},
+        path::Path,
+        time::Instant,
+    },
     termcolor::{ColorChoice, StandardStream},
 };
 
@@ -190,11 +195,135 @@ pub fn build(args: BuildArgs) -> Result<()> {
         Ok(result)
     }
 
+    struct MacroDef {
+        args: Vec<String>,
+        body: String,
+    }
+
+    fn expand_macros(source: &str) -> Result<String, Error> {
+        let mut macros: HashMap<String, MacroDef> = HashMap::new();
+        let mut output = String::new();
+        let mut i = 0;
+        let lines: Vec<&str> = source.lines().collect();
+
+        fn is_comment_or_empty(line: &str) -> bool {
+            let t = line.trim();
+            t.is_empty() || t.starts_with(';') || t.starts_with('#') || t.starts_with("//")
+        }
+
+        fn first_token(line: &str) -> Option<&str> {
+            line.trim().split_ascii_whitespace().next()
+        }
+
+        fn is_label_token(token: &str) -> bool {
+            token.contains(':')
+        }
+
+        fn is_directive(line: &str) -> bool {
+            line.trim().starts_with('.')
+        }
+
+        while i < lines.len() {
+            let line = lines[i];
+            let trimmed = line.trim();
+
+            if let Some(rest) = trimmed.strip_prefix(".macro") {
+                let rest = rest.trim();
+                let parts: Vec<&str> = rest
+                    .splitn(2, |c: char| c.is_ascii_whitespace())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                let name = parts
+                    .first()
+                    .ok_or_else(|| Error::msg(".macro requires a name"))?
+                    .to_string();
+                let args: Vec<String> = if parts.len() > 1 {
+                    parts[1].split(',').map(|s| s.trim().to_string()).collect()
+                } else {
+                    vec![]
+                };
+
+                let mut body = String::new();
+                i += 1;
+                while i < lines.len() {
+                    let body_line = lines[i];
+                    let body_trimmed = body_line.trim();
+                    if body_trimmed == ".endm" {
+                        i += 1;
+                        break;
+                    }
+                    if !body.is_empty() {
+                        body.push('\n');
+                    }
+                    body.push_str(body_line);
+                    i += 1;
+                }
+
+                if macros.contains_key(&name) {
+                    return Err(Error::msg(format!("Duplicate macro definition: {}", name)));
+                }
+                macros.insert(name, MacroDef { args, body });
+                continue;
+            }
+
+            if trimmed == ".endm" {
+                return Err(Error::msg(".endm without matching .macro"));
+            }
+
+            if !is_comment_or_empty(line)
+                && !is_directive(line)
+                && let Some(token) = first_token(line)
+            {
+                let name = token.trim_end_matches(':');
+                if !is_label_token(token)
+                    && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+                    && let Some(macro_def) = macros.get(name)
+                {
+                    let args_part = trimmed[token.len()..].trim_start();
+                    let args: Vec<&str> = if args_part.is_empty() {
+                        vec![]
+                    } else {
+                        args_part.split(',').map(|s| s.trim()).collect()
+                    };
+
+                    if args.len() != macro_def.args.len() {
+                        return Err(Error::msg(format!(
+                            "Macro '{}' expects {} argument(s), got {}",
+                            name,
+                            macro_def.args.len(),
+                            args.len()
+                        )));
+                    }
+
+                    let mut expanded = macro_def.body.clone();
+                    for (arg_name, arg_val) in macro_def.args.iter().zip(args.iter()) {
+                        let pattern = format!("\\{}", arg_name);
+                        expanded = expanded.replace(&pattern, arg_val);
+                    }
+                    let expanded = expand_macros(&expanded)?;
+                    output.push_str(&expanded);
+                    if !expanded.ends_with('\n') {
+                        output.push('\n');
+                    }
+                    i += 1;
+                    continue;
+                }
+            }
+
+            output.push_str(line);
+            output.push('\n');
+            i += 1;
+        }
+
+        Ok(output)
+    }
+
     // Function to compile assembly
     fn compile_assembly(src: &str, deploy: &str, debug: bool, arch: SbpfArch) -> Result<()> {
         let source_code = std::fs::read_to_string(src).unwrap();
         let base_dir = Path::new(src).parent().unwrap_or(Path::new("."));
         let source_code = expand_includes(&source_code, base_dir, false)?;
+        let source_code = expand_macros(&source_code)?;
         let file = SimpleFile::new(src.to_string(), source_code.clone());
 
         // Build assembler options
